@@ -20,16 +20,15 @@ import { web3Enable } from "@polkadot/extension-dapp";
 import { sepolia } from "wagmi/chains";
 import { executeParams, sendMessageParams, TxnData } from "@/types/transaction";
 import { Chain, ethBalance } from "@/types/common";
-import { useCommonStore } from "@/stores/common";
-
-const {api , setApi} = useCommonStore()
+// import { useCommonStore } from "@/stores/common";
+// const {api , setApi} = useCommonStore()
 
 const getInjectorMetadata = (api: ApiPromise) => {
     return {
       chain: api.runtimeChain.toString(),
       specVersion: api.runtimeVersion.specVersion.toNumber(),
       tokenDecimals: api.registry.chainDecimals[0] || 18,
-      tokenSymbol: api.registry.chainTokens[0] || "AVL",
+      tokenSymbol: api.registry.chainTokens[0] || "AVAIL",
       genesisHash: api.genesisHash.toHex(),
       ss58Format: isNumber(api.registry.chainSS58) ? api.registry.chainSS58 : 0,
       chainType: "substrate" as "substrate",
@@ -39,10 +38,10 @@ const getInjectorMetadata = (api: ApiPromise) => {
     };
   };
 
-  export async function initializeApi() {
-    const api = await initialize(substrateConfig.endpoint);
-    setApi(api)
-  }
+  // export async function initializeApi() {
+  //   const api = await initialize(substrateConfig.endpoint);
+  //   setApi(api)
+  // }
   
 export async function sendMessage(props: sendMessageParams, account: WalletAccount) {
     const { web3Accounts, web3FromSource } = await import(
@@ -61,7 +60,6 @@ export async function sendMessage(props: sendMessageParams, account: WalletAccou
         .sendMessage(props.message, props.to, props.domain)
         .signAndSend(account.address,
           { signer: injector.signer, app_id: 0 } as Partial<SignerOptions>, ({ status, events }) => {
-
             if (status.isInBlock) {
               console.log(`Transaction included at blockHash ${status.asInBlock}`);
               events.forEach(({ event }) => {
