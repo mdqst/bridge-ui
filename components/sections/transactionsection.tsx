@@ -246,12 +246,18 @@ export default function TransactionSection() {
        * and then subtract that from 20 minutes which is the proof interval.
        */
       //another way, just use diff, subtract from 10minutes and you'll get next proof incoming when.
-      let totalMinutes = 20 - ((new Date(sourceTimestamp).getTime() - ethHead.timestamp) / 1000 / 60);
+      let timePassed = ((new Date(sourceTimestamp).getTime() - ethHead.timestamp * 1000) / 1000 / 60);
+
+      if (timePassed < 0) {
+        return `Soon`
+      }
+
+      let totalMinutes = 20 - ((new Date(sourceTimestamp).getTime() - ethHead.timestamp * 1000) / 1000 / 60);
       if (totalMinutes < 0) {
         return `...`
       }
 
-      return `Est time remaining: ~${parseMinutes(totalMinutes)}`;
+      return `Est time: ~${parseMinutes(totalMinutes)}`;
     }
 
     if (from === Chain.AVAIL) {
@@ -265,7 +271,7 @@ export default function TransactionSection() {
         return `...`
       }
 
-      return `Est time remaining: ~${parseMinutes(estimatedTimeMinutes)}`;
+      return `Est time: ~${parseMinutes(estimatedTimeMinutes)}`;
     }
   };
 
