@@ -25,30 +25,54 @@ import {
   ArrowRight,
   ArrowUpRight,
   Clock,
-  ExternalLink,
+  InfoIcon,
   MoveRight,
 } from "lucide-react";
 import useClaim from "@/hooks/useClaim";
 import { useEffect, useState } from "react";
-import { showFailedMessage, showSuccessMessage } from "@/utils/common";
+import { showFailedMessage, showSuccessMessage, validAddress } from "@/utils/common";
 import { LoadingButton } from "../ui/loadingbutton";
 import { Transaction } from "@/types/transaction";
 import { CiCircleQuestion } from "react-icons/ci";
 import { parseError } from "@/utils/parseError";
 import { useLatestBlockInfo } from "@/stores/lastestBlockInfo";
 import { parseMinutes } from "@/utils/parseMinutes";
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import { Button } from "../ui/button";
 import Link from "next/link";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../ui/alert-dialog";
+import { Checkbox } from "../ui/checkbox";
+import { useCommonStore } from "@/stores/common";
+import { pollWithDelay } from "@/utils/poller";
+import { appConfig } from "@/config/default";
 
 export default function TransactionSection() {
-  const { pendingTransactions, completedTransactions } = useTransactions();
+  const { pendingTransactions, completedTransactions, fetchTransactions } = useTransactions();
+  const { setFetchingExternalTransactions, fetchingExternalTransactions } = useCommonStore();
   const { avlHead, ethHead } = useLatestBlockInfo();
   const [paginatedTransactionArray, setPaginatedTransactionArray] = useState<
     Transaction[][]
   >([]);
   const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [pendingTab, setPendingTab] = useState<boolean>(true);
+  type CheckedState = boolean | "indeterminate";
   const [
     paginatedCompletedTransactionArray,
     setPaginatedCompletedTransactionArray,
@@ -64,11 +88,16 @@ export default function TransactionSection() {
   const [availToEthHash, setAvailToEthHash] = useState<string>("");
   const [ethToAvailHash, setEthToAvailHash] = useState<string>("");
   const [showPagination, setShowPagination] = useState<boolean>(false);
+  const [externalAvailAddress, setExternalAvailAddress] = useState('');
+  const [externalEthAddress, setExternalEthAddress] = useState('');
+  const [open, setOpen] = useState(false);
+  const [isChecked, setIsChecked] = useState<CheckedState>(false);
 
   //In milliseconds - 20 minutes.
   const TELEPATHY_INTERVAL = 1200000;
   //In milliseconds - 120 minutes.
   const VECTORX_INTERVAL = 7200000;
+
 
   useEffect(() => {
     if (pendingTransactions && pendingTransactions.length > 0) {
@@ -187,6 +216,27 @@ export default function TransactionSection() {
     }
   };
 
+  const handleSubmit = async () => {
+
+    if (!validAddress(externalAvailAddress, Chain.AVAIL) || !validAddress(externalEthAddress, Chain.ETH)) {
+      alert("One or both addresses are invalid. Please check and try again.");
+      return;
+    }
+    setFetchingExternalTransactions(true);
+    await pollWithDelay(
+      fetchTransactions,
+      [
+        {
+          availAddress: externalAvailAddress,
+          ethAddress: externalEthAddress,
+        },
+      ],
+      appConfig.bridgeIndexerPollingInterval,
+      () => fetchingExternalTransactions && true
+    );
+    setOpen(false);
+  };
+
   function SubmitClaim({ txn, index }: { txn: Transaction; index: number }) {
     return (
       <>
@@ -213,7 +263,7 @@ export default function TransactionSection() {
                 originDomain: 1,
                 destinationDomain: 2,
               }
-            )
+            );
           }}
         >
           {txn.status === "READY_TO_CLAIM" ? "Claim Ready" : txn.status}
@@ -224,8 +274,6 @@ export default function TransactionSection() {
 
   const getStatusTime = ({
     from,
-    sourceTimestamp,
-    sourceBlockNumber,
     status,
   }: {
     from: Chain;
@@ -251,14 +299,14 @@ export default function TransactionSection() {
     }
 
     if (from === Chain.ETH) {
-      //Ethereum timestamp is in seconds, converting to ms here. 
+      //Ethereum timestamp is in seconds, converting to ms here.
       const lastProofTimestamp = ethHead.timestamp * 1000;
       const nextProofTimestamp = lastProofTimestamp + TELEPATHY_INTERVAL;
       const timeNow = Date.now();
       const timeLeft = nextProofTimestamp - timeNow;
 
       if (timeLeft < 0) {
-        return `Est time remaining: Soon`
+        return `Est time remaining: Soon`;
       }
 
       return `Est time remaining: ~${parseMinutes(timeLeft / 1000 / 60)}`;
@@ -271,24 +319,18 @@ export default function TransactionSection() {
       const timeLeft = nextProofTimestamp - timeNow;
 
       if (timeLeft < 0) {
-        return `Est time remaining: Soon`
+        return `Est time remaining: Soon`;
       }
 
       return `Est time remaining: ~${parseMinutes(timeLeft / 1000 / 60)}`;
     }
   };
 
-  function ParsedDate({
-    sourceTimestamp,
-  }: {
-    sourceTimestamp: string;
-  }) {
+  function ParsedDate({ sourceTimestamp }: { sourceTimestamp: string }) {
     return (
       <span className="flex md:flex-col flex-row items-center justify-center mr-4  ">
         <span className="text-white text-opacity-60 flex md:flex-col flex-row space-x-1 items-center justify-center ml-2">
-          <p className="text-white">
-            {parseDateTimeToDay(sourceTimestamp)}
-          </p>
+          <p className="text-white">{parseDateTimeToDay(sourceTimestamp)}</p>
           <p className=" text-xs">
             {parseDateTimeToMonthShort(sourceTimestamp)}
           </p>
@@ -355,7 +397,11 @@ export default function TransactionSection() {
       return setShowPagination(false);
     };
     showPagination();
-  }, [paginatedCompletedTransactionArray, paginatedTransactionArray, pendingTab]);
+  }, [
+    paginatedCompletedTransactionArray,
+    paginatedTransactionArray,
+    pendingTab,
+  ]);
 
   function PendingTransactions({
     pendingTransactions,
@@ -370,7 +416,6 @@ export default function TransactionSection() {
     availToEthHash: string;
     ethToAvailHash: string;
   }) {
-
     return (
       <div className="flex h-[85%] ">
         <TableBody className="overflow-y-scroll min-w-[99%] mx-auto space-y-2.5">
@@ -382,11 +427,7 @@ export default function TransactionSection() {
               >
                 <TableCell className="font-medium flex flex-row rounded-xl">
                   <div className="hidden md:flex">
-                    <ParsedDate
-                      sourceTimestamp={
-                        txn.sourceTimestamp
-                      }
-                    />
+                    <ParsedDate sourceTimestamp={txn.sourceTimestamp} />
                   </div>
 
                   <span className="flex flex-col-reverse items-start justify-center">
@@ -399,13 +440,15 @@ export default function TransactionSection() {
                       <p className="md:px-4 px-2">
                         <MoveRight />
                       </p>{" "}
-                      <ChainLabel chain={txn.sourceChain === Chain.AVAIL ? Chain.ETH : Chain.AVAIL} />
+                      <ChainLabel
+                        chain={
+                          txn.sourceChain === Chain.AVAIL
+                            ? Chain.ETH
+                            : Chain.AVAIL
+                        }
+                      />
                       <div className="md:hidden flex">
-                        <ParsedDate
-                          sourceTimestamp={
-                            txn.sourceTimestamp
-                          }
-                        />
+                        <ParsedDate sourceTimestamp={txn.sourceTimestamp} />
                       </div>
                     </span>
                     <span className="flex flex-row space-x-2">
@@ -422,7 +465,7 @@ export default function TransactionSection() {
                           txn.sourceChain === Chain.ETH
                             ? `${process.env.NEXT_PUBLIC_ETH_EXPLORER_URL}/tx/${txn.sourceTransactionHash}`
                             : //TODO: need to fix this, the local txn dosen't have all these, check indexer to see how they are fetching.
-                            `${process.env.NEXT_PUBLIC_SUBSCAN_URL}/extrinsic/${txn.sourceTransactionHash}`
+                              `${process.env.NEXT_PUBLIC_SUBSCAN_URL}/extrinsic/${txn.sourceTransactionHash}`
                         }
                       >
                         <ArrowUpRight className="w-4 h-4" />
@@ -446,26 +489,30 @@ export default function TransactionSection() {
                               {txn.status === "BRIDGED"
                                 ? `In Progress`
                                 : txn.status.charAt(0) +
-                                txn.status.toLocaleLowerCase().slice(1)}
+                                  txn.status.toLocaleLowerCase().slice(1)}
                             </p>
                             <span className="relative flex h-2 w-2">
                               <span
-                                className={`animate-ping absolute inline-flex h-full w-full rounded-full ${txn.status === "INITIATED"
-                                  ? "bg-yellow-600"
-                                  : `${txn.status === "PENDING"
-                                    ? "bg-blue-600"
-                                    : "bg-orange-500"
-                                  }`
-                                  } opacity-75`}
+                                className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
+                                  txn.status === "INITIATED"
+                                    ? "bg-yellow-600"
+                                    : `${
+                                        txn.status === "PENDING"
+                                          ? "bg-blue-600"
+                                          : "bg-orange-500"
+                                      }`
+                                } opacity-75`}
                               ></span>
                               <span
-                                className={`relative inline-flex rounded-full h-2 w-2  ${txn.status === "INITIATED"
-                                  ? "bg-yellow-600"
-                                  : `${txn.status === "PENDING"
-                                    ? "bg-blue-600"
-                                    : "bg-orange-500"
-                                  }`
-                                  }`}
+                                className={`relative inline-flex rounded-full h-2 w-2  ${
+                                  txn.status === "INITIATED"
+                                    ? "bg-yellow-600"
+                                    : `${
+                                        txn.status === "PENDING"
+                                          ? "bg-blue-600"
+                                          : "bg-orange-500"
+                                      }`
+                                }`}
                               ></span>
                             </span>
                           </Badge>
@@ -473,7 +520,14 @@ export default function TransactionSection() {
                       )}
                     </span>
                     <p className="text-xs flex flex-row items-end justify-end text-right text-white text-opacity-70 space-x-1">
-                      <span>{getStatusTime({ from: txn.sourceChain, sourceTimestamp: txn.sourceTimestamp, sourceBlockNumber: txn.sourceBlockNumber, status: txn.status })}</span>{" "}
+                      <span>
+                        {getStatusTime({
+                          from: txn.sourceChain,
+                          sourceTimestamp: txn.sourceTimestamp,
+                          sourceBlockNumber: txn.sourceBlockNumber,
+                          status: txn.status,
+                        })}
+                      </span>{" "}
                       <Clock className="w-4 h-4" />
                     </p>
                   </div>
@@ -497,32 +551,40 @@ export default function TransactionSection() {
                       <div className="flex flex-col space-y-2 ">
                         <p className="font-ppmori text-white text-sm text-opacity-60 mt-4">
                           Your{" "}
-                          <span className="text-white ">
-                            claim transaction
+                          <span className="text-white ">claim transaction</span>{" "}
+                          was successfully submitted to the chain. Your funds
+                          will be deposited to the destination account,
+                          generally within
+                          <span className="text-white italics">
+                            {" "}
+                            ~15-30 minutes.
                           </span>{" "}
-                          was successfully submitted to the chain. Your funds will be deposited to the destination account, generally
-                          within
-                          <span className="text-white italics"> ~15-30 minutes.</span>{" "}
                           <br />
-                          <span>You can close this tab in the meantime, or initiate
-                            another transfer.</span>
+                          <span>
+                            You can close this tab in the meantime, or initiate
+                            another transfer.
+                          </span>
                         </p>
                       </div>
                     </div>
                     <DialogFooter className="sm:justify-start mt-1">
                       <DialogClose asChild>
-                        <Link target="_blank" href={
-                          txn.sourceChain === Chain.AVAIL
-                            ? `${process.env.NEXT_PUBLIC_ETH_EXPLORER_URL}/tx/${availToEthHash}`
-                            : `${process.env.NEXT_PUBLIC_SUBSCAN_URL}/extrinsic/${ethToAvailHash}`
-                        } className="w-full !border-0">
+                        <Link
+                          target="_blank"
+                          href={
+                            txn.sourceChain === Chain.AVAIL
+                              ? `${process.env.NEXT_PUBLIC_ETH_EXPLORER_URL}/tx/${availToEthHash}`
+                              : `${process.env.NEXT_PUBLIC_SUBSCAN_URL}/extrinsic/${ethToAvailHash}`
+                          }
+                          className="w-full !border-0"
+                        >
                           <Button
                             type="button"
                             variant="primary"
-
                             className="w-full !border-0"
                           >
-                            View on Explorer <ArrowUpRight className="h-3 w-6" />
+                            View on Explorer{" "}
+                            <ArrowUpRight className="h-3 w-6" />
                           </Button>
                         </Link>
                       </DialogClose>
@@ -530,7 +592,6 @@ export default function TransactionSection() {
                   </DialogContent>
                 </Dialog>
               </TableRow>
-
             ))}
         </TableBody>
       </div>
@@ -553,11 +614,7 @@ export default function TransactionSection() {
               >
                 <TableCell className="font-medium flex flex-row rounded-xl">
                   <div className="hidden md:flex">
-                    <ParsedDate
-                      sourceTimestamp={
-                        txn.sourceTimestamp
-                      }
-                    />
+                    <ParsedDate sourceTimestamp={txn.sourceTimestamp} />
                   </div>
 
                   <span className="flex flex-col-reverse items-start justify-center">
@@ -570,13 +627,15 @@ export default function TransactionSection() {
                       <p className="md:px-4 px-2">
                         <MoveRight />
                       </p>{" "}
-                      <ChainLabel chain={txn.sourceChain === Chain.AVAIL ? Chain.ETH : Chain.AVAIL} />
+                      <ChainLabel
+                        chain={
+                          txn.sourceChain === Chain.AVAIL
+                            ? Chain.ETH
+                            : Chain.AVAIL
+                        }
+                      />
                       <div className="md:hidden flex">
-                        <ParsedDate
-                          sourceTimestamp={
-                            txn.sourceTimestamp
-                          }
-                        />
+                        <ParsedDate sourceTimestamp={txn.sourceTimestamp} />
                       </div>
                     </span>
                     <span className="flex flex-row space-x-2">
@@ -593,7 +652,7 @@ export default function TransactionSection() {
                           txn.sourceChain === Chain.ETH
                             ? `${process.env.NEXT_PUBLIC_ETH_EXPLORER_URL}/tx/${txn.sourceTransactionHash}`
                             : //TODO: need to fix this, the local txn dosen't have all these, check indexer to see how they are fetching.
-                            `${process.env.NEXT_PUBLIC_SUBSCAN_URL}/extrinsic/${txn.sourceBlockNumber}-${txn.sourceTransactionIndex}`
+                              `${process.env.NEXT_PUBLIC_SUBSCAN_URL}/extrinsic/${txn.sourceBlockNumber}-${txn.sourceTransactionIndex}`
                         }
                       >
                         <ArrowUpRight className="w-4 h-4" />
@@ -612,7 +671,7 @@ export default function TransactionSection() {
                             {txn.status === "CLAIMED"
                               ? "Bridged"
                               : txn.status.charAt(0) +
-                              txn.status.toLocaleLowerCase().slice(1)}
+                                txn.status.toLocaleLowerCase().slice(1)}
                           </p>
                           <span className="relative flex h-2 w-2">
                             <span
@@ -663,7 +722,9 @@ export default function TransactionSection() {
     );
   }
 
-  const isEndPage = pendingTab ? currentPage === paginatedTransactionArray.length - 1 : currentPage === paginatedCompletedTransactionArray.length - 1
+  const isEndPage = pendingTab
+    ? currentPage === paginatedTransactionArray.length - 1
+    : currentPage === paginatedCompletedTransactionArray.length - 1;
 
   return (
     <div className=" relative flex flex-col mx-auto w-[95%] h-[100%] ">
@@ -721,6 +782,93 @@ export default function TransactionSection() {
       {/* Pagination */}
       {showPagination ? (
         <div className="absolute w-[102%] pt-4 mx-auto bottom-3 -right-0 flex flex-row space-x-2 items-center justify-end bg-[#2B3042]">
+          <AlertDialog open={open}>
+            <AlertDialogTrigger
+              onClick={() => {
+                setOpen(!open);
+              }}
+              className=" "
+            >
+              <div className="flex flex-row items-center underline text-white justify-start pl-1 font-ppmori text-opacity-80">
+                Claim for another address?
+              </div>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="bg-[#252831] border-2 border-[#3a3b3cb1] !rounded-[1rem]">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-white font-ppmoribsemibold !text-lg">
+                  Claim to another address
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-[#B6B7BB] font-thicccboisemibold text-md">
+          <div className="border-white border-t border-opacity-25 w-full !h-1 mb-4"></div>
+
+          {/* External Avail Address Input */}
+          <div className="flex flex-col space-y-2 px-2 pb-4">
+            <label htmlFor="externalAvailAddress" className="text-white text-opacity-70 text-sm">
+              External Avail Address
+            </label>
+            <input
+              id="externalAvailAddress"
+              value={externalAvailAddress}
+              onChange={(e) => setExternalAvailAddress(e.target.value)}
+              className="bg-[#2A2D3E] border border-white border-opacity-25 rounded-md p-2 text-white text-opacity-90"
+              placeholder="Enter external avail address"
+            />
+          </div>
+
+          {/* External ETH Address Input */}
+          <div className="flex flex-col space-y-2 px-2 pb-4">
+            <label htmlFor="externalEthAddress" className="text-white text-opacity-70 text-sm">
+              External ETH Address
+            </label>
+            <input
+              id="externalEthAddress"
+              value={externalEthAddress}
+              onChange={(e) => setExternalEthAddress(e.target.value)}
+              className="bg-[#2A2D3E] border border-white border-opacity-25 rounded-md p-2 text-white text-opacity-90"
+              placeholder="Enter external ETH address"
+            />
+          </div>
+
+          <div className="items-start flex space-x-2 px-2 pb-4">
+            <Checkbox
+              id="terms1"
+              checked={isChecked}
+              onCheckedChange={setIsChecked}
+              className="text-white border-white border-opacity-70 border rounded-md mt-1"
+            />
+            <div className="grid gap-1.5 leading-none">
+              <label
+                htmlFor="terms1"
+                className="text-sm font-light leading-snug peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-white text-opacity-60"
+              >
+                Please double-check if the address is correct. Any tokens sent to an incorrect address will be unrecoverable.
+              </label>
+            </div>
+          </div>
+        </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  onClick={() => {
+                    setOpen(false);
+                  }}
+                  className="!bg-inherit !border-0 text-red-600 hover:text-red-800 "
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={!isChecked}
+                  className="rounded-xl bg-[#464A5B] flex flex-row  items-center space-x-2 p-1 px-4 font-ppmoribsemibold text-2xl  justify-center cursor-pointer"
+                  onClick={handleSubmit}
+                >
+                  <span>+</span>
+                  <span className="text-sm text-white text-opacity-70">
+                    Copy Address from Clipboard
+                  </span>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <p className="font-thicccboisemibold text-sm text-white mr-2">
             <HoverCard>
               <HoverCardTrigger className="cursor-pointer">
@@ -735,20 +883,22 @@ export default function TransactionSection() {
           <button
             disabled={currentPage === 0}
             onClick={() => setCurrentPage((prev) => prev - 1)}
-            className={`rounded-lg bg-[#484C5D] ${currentPage === 0
-              ? "cursor-not-allowed bg-opacity-30 text-opacity-40  text-white "
-              : " text-white"
-              } p-2`}
+            className={`rounded-lg bg-[#484C5D] ${
+              currentPage === 0
+                ? "cursor-not-allowed bg-opacity-30 text-opacity-40  text-white "
+                : " text-white"
+            } p-2`}
           >
             <ArrowLeft />
           </button>
           <button
             disabled={isEndPage}
             onClick={() => setCurrentPage((prev) => prev + 1)}
-            className={`rounded-lg bg-[#484C5D] ${isEndPage
-              ? "cursor-not-allowed bg-opacity-30 text-opacity-40  text-white "
-              : " text-white"
-              } p-2`}
+            className={`rounded-lg bg-[#484C5D] ${
+              isEndPage
+                ? "cursor-not-allowed bg-opacity-30 text-opacity-40  text-white "
+                : " text-white"
+            } p-2`}
           >
             <ArrowRight />
           </button>

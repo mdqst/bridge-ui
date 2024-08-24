@@ -67,7 +67,6 @@ import {
 } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../ui/hover-card";
-import { CiCircleQuestion } from "react-icons/ci";
 
 const formSchema = z.object({
   fromAmount: z.preprocess(
@@ -98,6 +97,7 @@ export default function BridgeSection() {
     setPendingTransactionsNumber,
     readyToClaimTransactionsNumber,
     setReadyToClaimTransactionsNumber,
+    fetchingExternalTransactions,
   } = useCommonStore();
   const { fetchTransactions } = useTransactions();
   const { pendingTransactions } = useTransactions();
@@ -135,7 +135,7 @@ export default function BridgeSection() {
         },
       ],
       appConfig.bridgeIndexerPollingInterval,
-      () => true
+      () => !fetchingExternalTransactions && true
     );
     pollWithDelay(
       getTokenPrice,

@@ -24,6 +24,8 @@ interface CommonStore {
     setFromAmount: (fromAmount: number) => void
     toAddress: string | undefined
     setToAddress: (toAddress: string) => void
+    fetchingExternalTransactions: boolean
+    setFetchingExternalTransactions: (fetchingExternalTransactions: boolean) => void
 }
 
 export const useCommonStore = create<CommonStore>((set) => ({
@@ -47,6 +49,8 @@ export const useCommonStore = create<CommonStore>((set) => ({
     setFromAmount: (fromAmount) => set({ fromAmount }),
     toAddress: undefined,
     setToAddress: (toAddress) => set({ toAddress }),
+    fetchingExternalTransactions: false,
+    setFetchingExternalTransactions: (fetchingExternalTransactions) => set({ fetchingExternalTransactions }),
 }));
 
  
